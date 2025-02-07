@@ -1,0 +1,133 @@
+library(readr)
+library(dplyr)
+library(Hmisc)
+library(readxl)
+
+#Bases a utilizar:
+
+engho2018_gastos <- read_delim("engho2018_gastos.txt", 
+                               "|", escape_double = FALSE, trim_ws = TRUE)
+codigos_carne_aviar <- read_excel("codigos_aviar.xlsx")
+
+#Merge 
+codigos_carne_aviar <- codigos_carne_aviar %>% 
+  select("articulo","clase_desc", "subclase_desc")
+
+#x <- merge(engho2018_gastos, Códigos_de_articulos_EngHo_Quimica_de_consumo_28_9, by = "articulo",  all = TRUE)
+
+engho_carne_aviar <- engho2018_gastos  %>%
+  left_join(codigos_carne_aviar, by = "articulo") %>%
+  na.omit(cols("articulo")) 
+#  rename( clasificacion_ncm = `Clasificación NCM`) 
+
+
+#Armo las categorias
+
+carne_aviar <- filter(engho_carne_aviar, subclase_desc == "Carne de ave, fresca, congelada o semipreparadas" )
+huevos <- filter(engho_carne_aviar, subclase_desc == "Huevos" )
+
+
+##para cada categoria y para el total:
+cons_carne_aviar <- carne_aviar %>% 
+  group_by(id)%>%
+  summarise(monto_carne_aviar=sum(monto),cantidad_carne_aviar=mean(cantidad))  
+
+cons_huevos <- huevos %>%
+  group_by(id)%>%
+  summarise(monto_huevos=sum(monto),cantidad_huevos=mean(cantidad))  
+
+cons_total <- engho_carne_aviar %>% 
+  group_by(id)%>%
+  summarise(monto_total=sum(monto),cantidad_total=mean(cantidad))  
+
+
+# engho hogares
+engho2018_hogares <- read_delim("engho2018_hogares.txt", 
+                                "|", escape_double = FALSE, trim_ws = TRUE)
+
+engho2018_hogares<-merge(engho2018_hogares, cons_carne_aviar, by="id",all.x=TRUE) %>%
+  merge(cons_huevos, by="id",all.x=TRUE)  
+
+engho2018_hogares[is.na(engho2018_hogares)] <- 0
+
+#### carne/total del consumo
+p_carne_tot<-(engho2018_hogares$monto_carne_aviar/engho2018_hogares$gastot)*100
+p_carne_tot[is.na(p_carne_tot)]<-0
+mean(p_carne_tot)
+
+#### huevos / tot 
+p_huevos_tot<-(engho2018_hogares$monto_huevos/engho2018_hogares$gastot)*100
+p_huevos_tot[is.na(p_huevos_tot)]<-0
+mean(p_huevos_tot) 
+
+
+
+#### carne/total consumo alimentos
+p_carne_alim<-(engho2018_hogares$monto_carne_aviar/engho2018_hogares$gc_01)*100
+p_carne_alim[is.na(p_carne_alim)]<-0
+mean(p_carne_alim)
+
+#### huevos / tot alim
+
+p_huevos_alim<-(engho2018_hogares$monto_huevos/engho2018_hogares$gc_01)*100
+p_huevos_alim[is.na(p_huevos_alim)]<-0
+mean(p_huevos_alim) 
+
+
+
+### uno las probabilidades con la base de datos 
+engho2018_hogares<-cbind(engho2018_hogares,p_huevos_tot,p_carne_tot,p_carne_alim,p_huevos_alim)
+
+##deciles
+
+
+#consumo carne
+
+deci_carne<-engho2018_hogares %>% 
+  group_by(dinpch_t) %>%
+  summarise(cons_carne_aviar=wtd.mean(p_carne_tot,weights=pondera),
+  )
+
+#consumo huevo
+
+deci_huevos<-engho2018_hogares %>%
+  group_by(dinpch_t) %>%
+  summarise(cons_huevos=wtd.mean(p_huevos_tot,weights=pondera),
+  )
+
+#consumo carne / alim
+
+deci_carne_alim<-engho2018_hogares %>% 
+  group_by(dinpch_t) %>%
+  summarise(cons_carne_aviar=wtd.mean(p_carne_alim,weights=pondera),
+  )
+
+#consumo huevo / alim
+
+deci_huevos_alim<-engho2018_hogares %>%
+  group_by(dinpch_t) %>%
+  summarise(cons_huevos=wtd.mean(p_huevos_alim,weights=pondera),
+  )
+
+
+
+#####HASTA ACA
+
+write.csv(deci_carne,"consumo_carne_aviar.csv")
+write.csv(deci_huevos,"consumo_huevos.csv")
+
+
+
+montos_carne_aviar_huevos<-engho2018_hogares %>% 
+  group_by(dinpch_t) %>%
+  summarise(monto_carne_aviar=wtd.mean(monto_carne_aviar,weights=pondera),
+            monto_huevos=wtd.mean(monto_huevos,weights=pondera),
+            ingreso_t =wtd.mean(ingtoth,weights=pondera)
+  )
+
+
+write_csv2(montos_carne_aviar_huevos,"montos_carne_aviar_huevos.csv")
+
+
+
+
